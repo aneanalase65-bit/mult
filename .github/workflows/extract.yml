@@ -1,0 +1,76 @@
+
+name: Extract DbxComp ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '*.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip rsync
+
+      - name: Extract project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: ZIP tidak ditemukan"
+            exit 1
+          fi
+
+          mkdir -p /tmp/dbxcomp
+
+          unzip -q "$ZIP_FILE" -d /tmp/dbxcomp
+
+          shopt -s dotglob nullglob
+          ITEMS=(/tmp/dbxcomp/*)
+
+          if [ ${#ITEMS[@]} -eq 1 ] && [ -d "${ITEMS[0]}" ]; then
+            rsync -a \
+              --exclude='.github/workflows/***' \
+              "${ITEMS[0]}/" ./
+          else
+            rsync -a \
+              --exclude='.github/workflows/***' \
+              /tmp/dbxcomp/ ./
+          fi
+
+          rm -f "$ZIP_FILE"
+
+      - name: Commit extracted project
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          # Jangan izinkan GITHUB_TOKEN mengubah workflow
+          git reset -q HEAD -- .github/workflows/
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Initialize DbxComp project"
+            git push origin main
+          else
+            echo "Tidak ada perubahan untuk di-commit"
+          fi
